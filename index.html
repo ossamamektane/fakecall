@@ -2056,6 +2056,21 @@
                 <button class="minibtn" id="cAudioPlay">Play</button>
             </div>
         </div>
+        <p class="glabel">Hang-up sound</p>
+        <div class="group" id="hangGroup">
+            <div class="row">
+                <span class="grow" id="hangName" style="color:var(--grey);font-size:14px">Loading…</span>
+                <button class="minibtn" id="hangPreview">Play</button>
+            </div>
+            <div class="row urlrow" style="align-items:center">
+                <div class="grow"><input id="hangUrl" type="url" placeholder="Hang-up sound link (https://...mp3)" autocapitalize="off" autocorrect="off" spellcheck="false"/></div>
+                <button class="minibtn" id="hangUse">Use</button>
+            </div>
+            <div class="row">
+                <span class="grow" id="hangStatus" style="color:var(--grey);font-size:13px"></span>
+                <button class="minibtn" id="hangReset">Default</button>
+            </div>
+        </div>
         <button class="bigbtn green" id="cCall">Start call</button>
         <button class="bigbtn red" id="cDelete">Delete Contact</button>
         <p class="tip">The last ringtone and answer audio you pick become the default for every contact. Anything you set here is kept for this contact.</p>
@@ -3165,11 +3180,12 @@
                 endSnd.setAttribute("playsinline", "");
                 endSnd.preload = "auto";
                 endSnd.src = END_SND_URL;
+                window.endSnd = endSnd;
                 try {
                     endSnd.load();
                 } catch (e) {}
                 /* grab a local copy so the hang-up sound still fires with no signal */
-                if (window.fetch) {
+                if (false && window.fetch) { /* retired: sound manager sets the hang-up sound */
                     fetch(END_SND_URL).then(function(r) {
                         return r.blob();
                     }).then(function(b) {
@@ -3695,7 +3711,7 @@
                 if (ringPreviewOn) {
                     stopRing();
                     ringPreviewOn = false;
-                    b.textContent = "Preview";
+                    b.textContent = "Play";
                 }
             }, 10000);
         };
@@ -9707,8 +9723,8 @@
                 }).catch(function() {});
             } catch (e) {}
         }
-        useCached();
-        setTimeout(store, 1500);
+        /* retired: hang-up sound now comes from the sound manager */
+        cached = function(){ return ""; };
 
         /* if the end sound has no local copy and there is no connection, fall
              back to the built-in tone instead of silence */
@@ -10975,5 +10991,143 @@
     }
     </style>
 
+
+<div id="soundGate" style="display:none;position:fixed;inset:0;z-index:2147483647;background:#000;color:#fff;
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;text-align:center;
+  padding:calc(env(safe-area-inset-top,0px) + 80px) 32px 40px;flex-direction:column;align-items:center;justify-content:center">
+  <div style="font-size:22px;font-weight:600;margin-bottom:10px">Connect to the internet</div>
+  <div style="font-size:16px;color:#98989f;line-height:1.45;max-width:300px;margin:0 auto 28px">The app needs to download its sounds once. After that it works offline.</div>
+  <button id="soundGateRetry" style="font:inherit;font-size:17px;font-weight:600;color:#fff;background:#2c2c2e;border:0;border-radius:14px;padding:14px 28px">Try again</button>
+</div>
+<script>
+/* =====================================================================
+   SOUND MANAGER
+   Every built-in sound is a link to a file in the site's own "sounds"
+   folder (the GitHub repo). The first time the app opens with internet,
+   each one is downloaded and kept in the app's own storage (IndexedDB),
+   not in the iPhone Files app. After that they play with no connection.
+   If a sound has never been saved and there is no internet, the app asks
+   for a connection once instead of playing silence.
+   ===================================================================== */
+(function () {
+    var SOUNDS = {
+        hangup: "sounds/hangup.mp3",
+        ring:   "sounds/ringtone.mp3"
+    };
+    var HANG_KEY = "ph.hangup.url";
+    var UGLY = "data:audio/wav;base64,UklGRiRLAAB";
+    function el(id) { return document.getElementById(id); }
+    function abs(u) { try { return new URL(u, location.href).href; } catch (e) { return u; } }
+    function get(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
+    function set(k, v) { try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch (e) {} }
+    function fileName(u) { try { return decodeURIComponent(u.split("?")[0].split("#")[0].split("/").pop()) || "link"; } catch (e) { return "link"; } }
+    function isNetErr(e) { return !navigator.onLine || (e && e.name === "TypeError"); }
+
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+
+    /* ---------- hang-up ---------- */
+    var hangLocal = "", hangState = "";
+    function hangLink() { return get(HANG_KEY) || abs(SOUNDS.hangup); }
+    function applyHang() {
+        var a = window.endSnd;
+        if (a && hangLocal && a.src !== hangLocal) {
+            try { a.src = hangLocal; a.load(); } catch (e) {}
+        }
+    }
+    function legacy() { var d = get("ph.endsnd.v1"); return d && d.indexOf(UGLY) !== 0 ? d : ""; }
+    function loadHang() {
+        return window.offlineAudio(hangLink()).then(function (u) {
+            hangLocal = u; hangState = "ok"; applyHang(); paint(); return true;
+        }, function (e) {
+            var old = legacy();
+            if (old && !hangLocal) { hangLocal = old; hangState = "legacy"; applyHang(); paint(); return true; }
+            hangState = isNetErr(e) ? "offline" : "missing"; paint(); throw e;
+        });
+    }
+
+    /* ---------- default ringtone (only when none is chosen) ---------- */
+    function loadRing() {
+        var cfg = window.cfg;
+        if (!cfg) return Promise.resolve(true);
+        var def = abs(SOUNDS.ring);
+        if (cfg.ringFile && cfg.ringFile !== def) return Promise.resolve(true); /* your own pick wins */
+        return window.offlineAudio(def).then(function (u) {
+            if (!cfg.ringFile) {
+                cfg.ringFile = def; cfg.ringName = "Ringtone"; cfg.ring = true;
+                try { window.save && window.save(); } catch (e) {}
+                var r = el("ringAudio");
+                if (r) { r.removeAttribute("data-loaded"); r.src = u; r.setAttribute("data-loaded", "1"); try { r.load(); } catch (e) {} }
+                ["ringName", "cRingName"].forEach(function (id) { var n = el(id); if (n) n.textContent = "Ringtone"; });
+                var w = el("ringWarn"); if (w) w.style.display = "none";
+            }
+            return true;
+        });
+    }
+
+    /* ---------- the one-time internet gate ---------- */
+    var busy = false;
+    function gate(on) { var g = el("soundGate"); if (g) g.style.display = on ? "flex" : "none"; }
+    function setup() {
+        if (busy) return; busy = true;
+        Promise.all([loadHang().then(null, function (e) { return e; }), loadRing().then(null, function (e) { return e; })])
+            .then(function (res) {
+                busy = false;
+                var net = res.some(function (r) { return r !== true && isNetErr(r); });
+                gate(net);
+            });
+    }
+    window.addEventListener("online", setup);
+    setInterval(function () { if (el("soundGate") && el("soundGate").style.display !== "none") setup(); }, 5000);
+    el("soundGateRetry").onclick = setup;
+    var hasUI = !!el("hangPreview");
+
+    /* every hang-up uses the saved sound */
+    var prevEnd = window.endTone;
+    if (typeof prevEnd === "function") {
+        window.endTone = function () { applyHang(); return prevEnd.apply(this, arguments); };
+    }
+
+    /* ---------- settings rows ---------- */
+    function paint() {
+        var n = el("hangName"), st = el("hangStatus");
+        if (!n) return;
+        var custom = !!get(HANG_KEY);
+        n.textContent = (custom ? fileName(get(HANG_KEY)) + " (link)" : "Default (" + SOUNDS.hangup + ")");
+        st.textContent = hangState === "ok" ? "Saved on this device. Plays offline."
+            : hangState === "legacy" ? "Using your previously saved sound."
+            : hangState === "offline" ? "Not downloaded yet. Connect once."
+            : hangState === "missing" ? "Not found at that link. Using the built-in tone."
+            : "";
+        el("hangReset").style.visibility = custom ? "visible" : "hidden";
+    }
+    var prev = null;
+    if (hasUI) {
+    el("hangPreview").onclick = function () {
+        var b = this;
+        if (prev) { try { prev.pause(); } catch (e) {} prev = null; b.textContent = "Play"; return; }
+        var src = hangLocal || (window.endSnd && window.endSnd.src);
+        if (!src) return;
+        prev = new Audio(src); prev.setAttribute("playsinline", "");
+        prev.onended = function () { prev = null; b.textContent = "Play"; };
+        b.textContent = "Stop";
+        var p = prev.play(); if (p && p.catch) p.catch(function () { prev = null; b.textContent = "Play"; });
+    };
+    el("hangUse").onclick = function () {
+        var inp = el("hangUrl"), btn = this, v = (inp.value || "").trim();
+        if (!/^https?:\/\//i.test(v)) { inp.value = ""; inp.placeholder = "Needs a full https:// link"; return; }
+        btn.disabled = true; btn.textContent = "Saving…";
+        window.offlineAudio(v).then(function (u) {
+            set(HANG_KEY, v); hangLocal = u; hangState = "ok"; applyHang(); paint(); inp.value = ""; inp.blur();
+        }).catch(function () {
+            alert("Could not save this sound. Connect to the internet and use a direct audio link (.mp3, .m4a or .wav).");
+        }).then(function () { btn.disabled = false; btn.textContent = "Use"; });
+    };
+    el("hangReset").onclick = function () { set(HANG_KEY, ""); hangLocal = ""; hangState = ""; paint(); loadHang().catch(function () {}); };
+    }
+
+    paint();
+    if (document.readyState === "complete") setup(); else window.addEventListener("load", setup);
+})();
+</script>
 </body>
 </html>

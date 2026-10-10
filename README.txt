@@ -8,11 +8,19 @@ HOSTED / HOME-SCREEN USE
 
 A raw.githubusercontent.com URL is source text, not the hosted app. Use your deployed HTTPS website.
 
-SOUNDS
-- The end-call sound is now a built-in two-note tone instead of the previous external MP3.
-- Local audio files continue to use the app's existing on-device storage.
-- The 'Use' buttons for sound links now download and save audio before accepting the link. Initial download needs internet and a server that permits cross-origin downloads; if blocked, download the sound separately and select the local file.
-- Old linked sounds should be used once while online to save them before going offline. Sounds never downloaded cannot play offline.
+SOUNDS (from your GitHub repo)
+- Put your sound files in a folder called "sounds" next to index.html:
+    sounds/hangup.mp3    the hang-up sound (required)
+    sounds/ringtone.mp3  default ringtone, used when no ringtone is picked
+- The first time the app opens with internet, it downloads them and keeps
+  them in the app's own storage (not the iPhone Files app). After that they
+  play offline.
+- If a sound was never downloaded and there is no internet, the app shows
+  "Connect to the internet" and continues by itself once it is online.
+- Call Setup now has a "Hang-up sound" section: Play, paste a different link,
+  or go back to the default.
+- If the browser clears website data, the app downloads the sounds again the
+  next time it is online.
 
 SINGLE-FILE USE
 index.html also contains the interface, styles, scripts, icon and end-call tone. A desktop browser can open the downloaded HTML without internet. Service workers/home-screen installation require HTTPS (or localhost for testing); phone file viewers may not execute HTML or preserve its storage.
