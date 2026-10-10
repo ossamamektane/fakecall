@@ -1,0 +1,11 @@
+{
+  "id": "./",
+  "name": "Fake Call",
+  "short_name": "Fake Call",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#000000"
+}
