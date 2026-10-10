@@ -1,4 +1,4 @@
-FAKE CALL — NO CUSTOM ICON
+PHONE APP — NO CUSTOM ICON
 
 HOSTED / HOME-SCREEN USE
 1. Upload ALL files in this folder together to the same HTTPS folder (for example, your GitHub Pages repository). Replace index.html and add sw.js, manifest.webmanifest, only. No icon files are needed.
@@ -26,7 +26,7 @@ SINGLE-FILE USE
 index.html also contains the interface, styles, scripts, icon and end-call tone. A desktop browser can open the downloaded HTML without internet. Service workers/home-screen installation require HTTPS (or localhost for testing); phone file viewers may not execute HTML or preserve its storage.
 
 TITLE / ICON
-The page title and app name are "Fake Call". All custom icon declarations and files have been removed. iOS may generate a screenshot-based or default home-screen icon; websites cannot remove the system home-screen icon tile. Some browsers may not offer PWA installation without manifest icons. Offline browsing still works.
+The page title and app name are "a blank name". All custom icon declarations and files have been removed. iOS may generate a screenshot-based or default home-screen icon; websites cannot remove the system home-screen icon tile. Some browsers may not offer PWA installation without manifest icons. Offline browsing still works.
 
 TESTING
 Verified locally in Chromium: service-worker installation, offline reload/reopen, app UI and audio storage, link-audio persistence across an offline reload, and inline JavaScript syntax. iOS behavior should be checked on your device.

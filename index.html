@@ -3,17 +3,17 @@
 <head>
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"/>
-    <title>Fake Call</title>
+    <title>&#x2800;</title>
     <meta name="apple-mobile-web-app-capable" content="yes"/>
     <meta name="mobile-web-app-capable" content="yes"/>
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-    <meta name="apple-mobile-web-app-title" content="Fake Call"/>
+    <meta name="apple-mobile-web-app-title" content="&#x2800;"/>
     <meta name="theme-color" content="#000000"/>
     <meta name="format-detection" content="telephone=no"/>
 
     <link rel="manifest" id="mf" href="./manifest.webmanifest"/>
 
-    <meta name="application-name" content="Fake Call"/>
+    <meta name="application-name" content="&#x2800;"/>
     <meta name="msapplication-TileColor" content="#000000"/>
 
     <style>
@@ -2270,6 +2270,26 @@
         });
         return database;
     }
+    /* read the download piece by piece so the app can show real progress */
+    function readWithProgress(r, url, type) {
+        var total = parseInt(r.headers.get("content-length") || "0", 10) || 0;
+        function tell(loaded, end) {
+            try { window.dispatchEvent(new CustomEvent("sndprogress", { detail: { url: url, loaded: loaded, total: total, done: !!end } })); } catch (e) {}
+        }
+        if (!r.body || !r.body.getReader) {
+            return r.blob().then(function (b) { tell(b.size, true); return b; });
+        }
+        var reader = r.body.getReader(), parts = [], loaded = 0;
+        tell(0);
+        function pump() {
+            return reader.read().then(function (x) {
+                if (x.done) { tell(loaded, true); return new Blob(parts, { type: type || "audio/mpeg" }); }
+                parts.push(x.value); loaded += x.value.length; tell(loaded);
+                return pump();
+            });
+        }
+        return pump();
+    }
     window.offlineAudio = function (url) {
         if (objectURLs[url]) return Promise.resolve(objectURLs[url]);
         if (pending[url]) return pending[url];
@@ -2285,7 +2305,7 @@
                     var type = (r.headers.get("content-type") || "").toLowerCase();
                     if (type.indexOf("text/") === 0 || type.indexOf("json") !== -1)
                         throw new Error("Use a direct audio file link");
-                    return r.blob();
+                    return readWithProgress(r, url, type);
                 }).then(function (b) {
                     if (!b.size) throw new Error("Empty audio file");
                     return new Promise(function (resolve, reject) {
@@ -10397,12 +10417,13 @@
                     return;
                 }
                 btn.disabled = true;
-                btn.textContent = "Saving…";
+                btn.textContent = "0%"; btn.__pending = v;
                 window.offlineAudio(v).then(function (localURL) {
                     onUse(v, nameFromUrl(v), localURL);
                     btn.__saved = v;
                     inp.value = v;
                     inp.blur();
+                    try { window.__sndPill && window.__sndPill("Sound saved"); } catch (e) {}
                 }).catch(function () {
                     alert("Could not save this sound offline. Connect to the internet and use a direct audio link, or choose a downloaded audio file instead.");
                 }).finally(function () {
@@ -10555,12 +10576,13 @@
                     return;
                 }
                 btn.disabled = true;
-                btn.textContent = "Saving…";
+                btn.textContent = "0%"; btn.__pending = v;
                 window.offlineAudio(v).then(function (localURL) {
                     onUse(v, nameFromUrl(v), localURL);
                     btn.__saved = v;
                     inp.value = v;
                     inp.blur();
+                    try { window.__sndPill && window.__sndPill("Sound saved"); } catch (e) {}
                 }).catch(function () {
                     alert("Could not save this sound offline. Connect to the internet and use a direct audio link, or choose a downloaded audio file instead.");
                 }).finally(function () {
@@ -11099,14 +11121,98 @@
     /* ---------- the one-time internet gate ---------- */
     var busy = false;
     function gate(on) { var g = el("soundGate"); if (g) g.style.display = on ? "flex" : "none"; }
+    /* every other sound link you have used (contact ringtones, answer audio) */
+    function otherLinks() {
+        var out = {}, seen = 0;
+        function scan(o, depth) {
+            if (!o || depth > 3 || seen++ > 5000) return;
+            if (typeof o === "string") { if (/^https?:\/\/\S+$/i.test(o)) out[o] = 1; return; }
+            if (typeof o !== "object") return;
+            for (var k in o) { if (k === "photo") continue; try { scan(o[k], depth + 1); } catch (e) {} }
+        }
+        try { scan(window.cfg, 0); } catch (e) {}
+        try { scan(window.__api && window.__api.people, 0); } catch (e) {}
+        try { scan(JSON.parse(get("ph.defaults.v1") || "{}"), 0); } catch (e) {}
+        delete out[abs(SOUNDS.ring)]; delete out[hangLink()];
+        return Object.keys(out);
+    }
+
+    /* ---------- little status pill: is everything downloaded? ---------- */
+    var pill = document.createElement("div");
+    pill.id = "sndPill";
+    pill.className = "row";
+    /* sits inside the Hang-up sound section as a normal line - nothing floats over the page */
+    pill.style.cssText = "display:none;align-items:center;gap:8px;font-size:13px;color:var(--grey);min-height:0";
+    (function place() {
+        var g = el("hangGroup");
+        if (g) g.appendChild(pill); else { pill.style.cssText += ";position:fixed;left:-9999px"; document.body.appendChild(pill); }
+    })();
+    var pillT = null;
+    function showPill(html, ms, tap) {
+        pill.innerHTML = html;
+        pill.style.display = "flex";
+        pill.style.cursor = tap ? "pointer" : "";
+        pill.onclick = tap || null;
+        clearTimeout(pillT);
+    }
+    function hidePill() {}
+    var SPIN = '<span style="flex:none;width:12px;height:12px;border-radius:50%;border:2px solid rgba(127,127,127,.35);border-top-color:currentColor;display:inline-block;animation:sndspin .8s linear infinite"></span>';
+    var OK = '<span style="color:#30d158;font-weight:700">&#10003;</span>';
+    var BAD = '<span style="color:#ff9f0a;font-weight:700">!</span>';
+    var st = document.createElement("style");
+    st.textContent = "@keyframes sndspin{to{transform:rotate(360deg)}}@keyframes sndslide{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}";
+    document.head.appendChild(st);
+    var lastStatus = "";
+    window.soundStatus = function () { return lastStatus; };
+    window.__sndPill = function (t) { showPill(OK + "<span>" + t + "</span>", 1600); };
+
     function setup() {
         if (busy) return; busy = true;
-        Promise.all([loadHang().then(null, function (e) { return e; }), loadRing().then(null, function (e) { return e; })])
-            .then(function (res) {
-                busy = false;
-                var net = res.some(function (r) { return r !== true && isNetErr(r); });
-                gate(net);
-            });
+        var others = otherLinks(), total = 2 + others.length, done = 0;
+        /* progress only shows if it takes a moment, i.e. something is downloading */
+        var bytes = {}, loading = false;
+        function mb(n) { return (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + " MB"; }
+        function draw() {
+            var got = 0, want = 0, known = true;
+            for (var k in bytes) { got += bytes[k].loaded; if (bytes[k].total) want += bytes[k].total; else known = false; }
+            var pct = known && want ? Math.min(100, Math.floor(got / want * 100)) : -1;
+            var label = pct >= 0 ? "Loading sounds " + pct + "%" : "Loading sounds " + mb(got);
+            if (!loading) {
+                loading = true;
+                showPill('<div style="display:flex;flex-direction:column;gap:6px;flex:1;min-width:0">' +
+                    '<div style="display:flex;align-items:center;gap:8px">' + SPIN + '<span id="sndLbl"></span></div>' +
+                    '<div style="height:4px;border-radius:2px;background:rgba(127,127,127,.25);overflow:hidden">' +
+                    '<div id="sndBar" style="height:100%;width:0;background:currentColor;border-radius:2px;transition:width .2s"></div></div></div>', 0);
+            }
+            var l = document.getElementById("sndLbl"), b = document.getElementById("sndBar");
+            if (l) l.textContent = label + (total > 1 ? " \u00b7 " + Math.min(done + 1, total) + "/" + total : "");
+            if (b) {
+                if (pct >= 0) { b.style.width = pct + "%"; b.style.animation = ""; }
+                else { b.style.width = "35%"; b.style.animation = "sndslide 1.1s ease-in-out infinite"; }
+            }
+        }
+        function onProg(e) { var d = e.detail || {}; bytes[d.url] = { loaded: d.loaded || 0, total: d.total || 0 }; draw(); }
+        window.addEventListener("sndprogress", onProg);
+        var slow = setTimeout(function () { if (!loading) draw(); }, 350);
+        function tick(r) { done++; if (loading) draw(); return r; }
+        function settle(p) { return p.then(function () { return tick(true); }, function (e) { return tick(e || new Error("fail")); }); }
+        var jobs = [settle(loadHang()), settle(loadRing())].concat(others.map(function (u) { return settle(window.offlineAudio(u)); }));
+        Promise.all(jobs).then(function (res) {
+            busy = false; clearTimeout(slow);
+            window.removeEventListener("sndprogress", onProg);
+            var failed = res.filter(function (r) { return r !== true; });
+            var net = failed.some(isNetErr);
+            /* the hang-up sound is the one that must exist offline */
+            gate(net && hangState !== "ok" && hangState !== "legacy");
+            if (!failed.length) {
+                lastStatus = "ready";
+                showPill(OK + "<span>Sounds ready</span>", 1600);
+            } else {
+                lastStatus = net ? "offline" : "missing";
+                showPill(BAD + "<span>" + failed.length + " of " + total + " sounds not saved" + (net ? " \u00b7 no internet" : "") + " \u00b7 tap to retry</span>", 6000,
+                    function () { hidePill(); setup(); });
+            }
+        });
     }
     window.addEventListener("online", setup);
     setInterval(function () { if (el("soundGate") && el("soundGate").style.display !== "none") setup(); }, 5000);
@@ -11152,9 +11258,9 @@
         if (!v && saved) { inp.value = saved; btn.textContent = "Saved"; return; }
         if (v && v === saved && hangState === "ok") { btn.textContent = "Saved"; return; }
         if (!/^https?:\/\//i.test(v)) { inp.value = ""; inp.placeholder = "Needs a full https:// link"; return; }
-        btn.disabled = true; btn.textContent = "Saving…";
+        btn.disabled = true; btn.textContent = "0%"; btn.__pending = v;
         window.offlineAudio(v).then(function (u) {
-            set(HANG_KEY, v); hangLocal = u; hangState = "ok"; applyHang(); paint(); inp.value = v; inp.blur();
+            set(HANG_KEY, v); hangLocal = u; hangState = "ok"; applyHang(); paint(); inp.value = v; inp.blur(); showPill(OK + "<span>Hang-up sound saved</span>", 1600);
         }).catch(function () {
             alert("Could not save this sound. Connect to the internet and use a direct audio link (.mp3, .m4a or .wav).");
         }).then(function () { btn.disabled = false; btn.textContent = (get(HANG_KEY) === (inp.value || "").trim() && hangState === "ok") ? "Saved" : "Use"; });
@@ -11222,6 +11328,53 @@
     ["click", "touchend"].forEach(function (ev) {
         document.addEventListener(ev, function () { check(); setTimeout(check, 60); setTimeout(check, 400); }, true);
     });
+})();
+</script>
+<script>
+/* Lock screen / Control Centre: whatever the phone shows for a playing
+   sound has no name at all, just a blank label. */
+(function () {
+    var BLANK = "\u2800"; /* invisible character: shows as an empty name */
+    function tag() {
+        try {
+            if (document.title !== BLANK) document.title = BLANK;
+            if ("mediaSession" in navigator && window.MediaMetadata) {
+                var m = navigator.mediaSession.metadata;
+                if (!m || m.title !== BLANK) navigator.mediaSession.metadata = new MediaMetadata({ title: BLANK, artist: BLANK, album: "" });
+            }
+        } catch (e) {}
+    }
+    tag();
+    document.addEventListener("play", tag, true);
+    setInterval(tag, 2000);
+})();
+</script>
+<script>
+/* download progress shown right inside the "Use" button that started it */
+(function () {
+    function btns() { return document.querySelectorAll(".urlrow .minibtn"); }
+    window.addEventListener("sndprogress", function (e) {
+        var d = e.detail || {};
+        Array.prototype.forEach.call(btns(), function (b) {
+            if (!b.disabled || b.__pending !== d.url) return;
+            if (d.total) {
+                var p = Math.min(100, Math.floor(d.loaded / d.total * 100));
+                b.textContent = p + "%";
+                b.style.backgroundImage = "linear-gradient(90deg, rgba(127,127,127,.38) " + p + "%, transparent " + p + "%)";
+            } else {
+                b.textContent = (d.loaded / 1048576).toFixed(1) + " MB";
+            }
+        });
+    });
+    /* once a button is finished (saved or failed) wipe the progress fill */
+    setInterval(function () {
+        Array.prototype.forEach.call(btns(), function (b) {
+            if (!b.disabled && b.style.backgroundImage) { b.style.backgroundImage = ""; b.__pending = null; }
+        });
+    }, 300);
+    var st = document.createElement("style");
+    st.textContent = ".urlrow .minibtn{min-width:72px;text-align:center;font-variant-numeric:tabular-nums;white-space:nowrap}";
+    document.head.appendChild(st);
 })();
 </script>
 </body>
