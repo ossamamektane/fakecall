@@ -10375,8 +10375,22 @@
             var btn = document.createElement("button");
             btn.className = "minibtn";
             btn.textContent = "Use";
+            inp.addEventListener("input", function() {
+                if (!btn.disabled) btn.textContent = "Use";
+            });
             btn.onclick = function() {
+                if (btn.disabled)
+                    return; /* already saving - ignore extra taps */
                 var v = (inp.value || "").trim();
+                if (!v && btn.__saved) {
+                    inp.value = btn.__saved;
+                    btn.textContent = "Saved";
+                    return;
+                }
+                if (v && v === btn.__saved) {
+                    btn.textContent = "Saved";
+                    return; /* same link, already saved */
+                }
                 if (!/^https?:\/\//i.test(v)) {
                     inp.value = "";
                     inp.placeholder = "Needs a full https:// link";
@@ -10386,12 +10400,14 @@
                 btn.textContent = "Saving…";
                 window.offlineAudio(v).then(function (localURL) {
                     onUse(v, nameFromUrl(v), localURL);
+                    btn.__saved = v;
+                    inp.value = v;
                     inp.blur();
                 }).catch(function () {
                     alert("Could not save this sound offline. Connect to the internet and use a direct audio link, or choose a downloaded audio file instead.");
                 }).finally(function () {
                     btn.disabled = false;
-                    btn.textContent = "Use";
+                    btn.textContent = (btn.__saved && btn.__saved === (inp.value || "").trim()) ? "Saved" : "Use";
                 });
             };
             var g = document.createElement("div");
@@ -10517,8 +10533,22 @@
             var btn = document.createElement("button");
             btn.className = "minibtn";
             btn.textContent = "Use";
+            inp.addEventListener("input", function() {
+                if (!btn.disabled) btn.textContent = "Use";
+            });
             btn.onclick = function() {
+                if (btn.disabled)
+                    return; /* already saving - ignore extra taps */
                 var v = (inp.value || "").trim();
+                if (!v && btn.__saved) {
+                    inp.value = btn.__saved;
+                    btn.textContent = "Saved";
+                    return;
+                }
+                if (v && v === btn.__saved) {
+                    btn.textContent = "Saved";
+                    return; /* same link, already saved */
+                }
                 if (!/^https?:\/\//i.test(v)) {
                     inp.value = "";
                     inp.placeholder = "Needs a full https:// link";
@@ -10528,12 +10558,14 @@
                 btn.textContent = "Saving…";
                 window.offlineAudio(v).then(function (localURL) {
                     onUse(v, nameFromUrl(v), localURL);
+                    btn.__saved = v;
+                    inp.value = v;
                     inp.blur();
                 }).catch(function () {
                     alert("Could not save this sound offline. Connect to the internet and use a direct audio link, or choose a downloaded audio file instead.");
                 }).finally(function () {
                     btn.disabled = false;
-                    btn.textContent = "Use";
+                    btn.textContent = (btn.__saved && btn.__saved === (inp.value || "").trim()) ? "Saved" : "Use";
                 });
             };
             wrap.appendChild(g);
@@ -11112,21 +11144,84 @@
         b.textContent = "Stop";
         var p = prev.play(); if (p && p.catch) p.catch(function () { prev = null; b.textContent = "Play"; });
     };
+    el("hangUrl").addEventListener("input", function () { if (!el("hangUse").disabled) el("hangUse").textContent = "Use"; });
     el("hangUse").onclick = function () {
         var inp = el("hangUrl"), btn = this, v = (inp.value || "").trim();
+        if (btn.disabled) return;
+        var saved = get(HANG_KEY);
+        if (!v && saved) { inp.value = saved; btn.textContent = "Saved"; return; }
+        if (v && v === saved && hangState === "ok") { btn.textContent = "Saved"; return; }
         if (!/^https?:\/\//i.test(v)) { inp.value = ""; inp.placeholder = "Needs a full https:// link"; return; }
         btn.disabled = true; btn.textContent = "Saving…";
         window.offlineAudio(v).then(function (u) {
-            set(HANG_KEY, v); hangLocal = u; hangState = "ok"; applyHang(); paint(); inp.value = ""; inp.blur();
+            set(HANG_KEY, v); hangLocal = u; hangState = "ok"; applyHang(); paint(); inp.value = v; inp.blur();
         }).catch(function () {
             alert("Could not save this sound. Connect to the internet and use a direct audio link (.mp3, .m4a or .wav).");
-        }).then(function () { btn.disabled = false; btn.textContent = "Use"; });
+        }).then(function () { btn.disabled = false; btn.textContent = (get(HANG_KEY) === (inp.value || "").trim() && hangState === "ok") ? "Saved" : "Use"; });
     };
-    el("hangReset").onclick = function () { set(HANG_KEY, ""); hangLocal = ""; hangState = ""; paint(); loadHang().catch(function () {}); };
+    el("hangReset").onclick = function () { el("hangUrl").value = ""; el("hangUse").textContent = "Use"; set(HANG_KEY, ""); hangLocal = ""; hangState = ""; paint(); loadHang().catch(function () {}); };
     }
 
+    if (hasUI && get(HANG_KEY)) { el("hangUrl").value = get(HANG_KEY); el("hangUse").textContent = "Saved"; }
     paint();
     if (document.readyState === "complete") setup(); else window.addEventListener("load", setup);
+})();
+</script>
+<script>
+/* =====================================================================
+   KEEP THE SCREEN ON
+   While a call is waiting to ring (the black screen), ringing, dialling
+   or in progress, the phone must not auto-lock. Uses the Screen Wake
+   Lock API; where that is missing or refused, a tiny silent looping
+   video keeps the display awake instead. Everything is released the
+   moment the call is over, so normal auto-lock comes straight back.
+   ===================================================================== */
+(function () {
+    var VID = "data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAQhbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAB9AAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAA0x0cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAB9AAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAEAAAABAAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAfQAAAIAAABAAAAAALEbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAoAAAAUABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAACb21pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAi9zdGJsAAAAv3N0c2QAAAAAAAAAAQAAAK9hdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAEAAQABIAAAASAAAAAAAAAABFExhdmM2MS4zLjEwMCBsaWJ4MjY0AAAAAAAAAAAAAAAAGP//AAAANWF2Y0MBZAAK/+EAGGdkAAqs2UQmwEQAAAMABAAAAwBQPEiWWAEABmjr48TITP34+AAAAAAQcGFzcAAAAAEAAAABAAAAFGJ0cnQAAAAAAAAP+AAAD/gAAAAYc3R0cwAAAAAAAAABAAAAFAAABAAAAAAUc3RzcwAAAAAAAAABAAAAAQAAAKhjdHRzAAAAAAAAABMAAAABAAAIAAAAAAEAABQAAAAAAQAACAAAAAABAAAAAAAAAAEAAAQAAAAAAQAAFAAAAAABAAAIAAAAAAEAAAAAAAAAAQAABAAAAAABAAAUAAAAAAEAAAgAAAAAAQAAAAAAAAABAAAEAAAAAAEAABQAAAAAAQAACAAAAAABAAAAAAAAAAEAAAQAAAAAAQAAEAAAAAACAAAEAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAFAAAAAEAAABkc3RzegAAAAAAAAAAAAAAFAAAAtsAAAAQAAAADQAAAA0AAAANAAAAFgAAAA8AAAANAAAADQAAABUAAAAPAAAADQAAAA0AAAAVAAAADwAAAA0AAAANAAAAFQAAAA8AAAANAAAAFHN0Y28AAAAAAAAAAQAABFEAAABhdWR0YQAAAFltZXRhAAAAAAAAACFoZGxyAAAAAAAAAABtZGlyYXBwbAAAAAAAAAAAAAAAACxpbHN0AAAAJKl0b28AAAAcZGF0YQAAAAEAAAAATGF2ZjYxLjEuMTAwAAAACGZyZWUAAAQGbWRhdAAAArAGBf//rNxF6b3m2Ui3lizYINkj7u94MjY0IC0gY29yZSAxNjQgcjMxOTEgNDYxM2FjMyAtIEguMjY0L01QRUctNCBBVkMgY29kZWMgLSBDb3B5bGVmdCAyMDAzLTIwMjQgLSBodHRwOi8vd3d3LnZpZGVvbGFuLm9yZy94MjY0Lmh0bWwgLSBvcHRpb25zOiBjYWJhYz0xIHJlZj0zIGRlYmxvY2s9MTotMzotMyBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9Mi4wMDowLjcwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tNCB0aHJlYWRzPTIgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTEwIHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4yMACAAAAAI2WIhAAUzn/+98dPwKbq3CLLnUU9ISGuwP9SbQokxA/J30jBAAAADEGaJGxBTOf+1o1GgAAAAAlBnkJ4gjnPAdUAAAAJAZ5hdEEM5wLGAAAACQGeY2pBDOcCxwAAABJBmmhJqEFomUwIKZz//taNRoEAAAALQZ6GRREsEc5/AdUAAAAJAZ6ldEEM5wLHAAAACQGep2pBDOcCxgAAABFBmqxJqEFsmUwIJ5z//rUr7wAAAAtBnspFFSwRzn8B1QAAAAkBnul0QQznAsYAAAAJAZ7rakEM5wLGAAAAEUGa8EmoQWyZTAglnP/+tSvvAAAAC0GfDkUVLBHOfwHVAAAACQGfLXRBDOcCxwAAAAkBny9qQQznAsYAAAARQZszSahBbJlMCCGc//6qV94AAAALQZ9RRRUsEM5/AscAAAAJAZ9yakEM5wLG";
+    var lock = null, asking = false, noWL = !("wakeLock" in navigator), vid = null;
+    function on(id) { var e = document.getElementById(id); return !!(e && e.classList.contains("on")); }
+    function needed() {
+        var b = document.body;
+        return b.classList.contains("blacked") || on("blackout") || on("incoming") || on("active") || on("dialOut") || b.classList.contains("incall");
+    }
+    function videoOn() {
+        if (!vid) {
+            vid = document.createElement("video");
+            vid.setAttribute("playsinline", ""); vid.setAttribute("webkit-playsinline", "");
+            vid.setAttribute("muted", ""); vid.muted = true; vid.loop = true;
+            vid.setAttribute("aria-hidden", "true");
+            vid.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0.01;pointer-events:none;z-index:-1";
+            vid.src = VID;
+            document.body.appendChild(vid);
+        }
+        if (vid.paused) { var p = vid.play(); if (p && p.catch) p.catch(function () {}); }
+    }
+    function keepOn() {
+        if (document.visibilityState !== "visible") return;
+        if (!noWL) {
+            if (lock || asking) return;
+            asking = true;
+            navigator.wakeLock.request("screen").then(function (l) {
+                asking = false; lock = l;
+                l.addEventListener("release", function () { lock = null; });
+                if (!needed()) release();
+            }).catch(function () { asking = false; noWL = true; videoOn(); });
+            return;
+        }
+        videoOn();
+    }
+    function release() {
+        if (lock) { try { lock.release(); } catch (e) {} lock = null; }
+        if (vid && !vid.paused) { try { vid.pause(); } catch (e) {} }
+    }
+    function check() { needed() ? keepOn() : release(); }
+    setInterval(check, 1000);
+    document.addEventListener("visibilitychange", check);
+    /* re-check right after any tap - that is when a call gets scheduled,
+       and iOS is happiest granting the lock inside a user gesture */
+    ["click", "touchend"].forEach(function (ev) {
+        document.addEventListener(ev, function () { check(); setTimeout(check, 60); setTimeout(check, 400); }, true);
+    });
 })();
 </script>
 </body>

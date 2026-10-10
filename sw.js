@@ -1,5 +1,5 @@
 'use strict';
-const CACHE = 'applesupport-offline-v4';
+const CACHE = 'applesupport-offline-v5';
 const ROOT = new URL('./', self.location.href);
 const INDEX = new URL('index.html', ROOT).href;
 const FILES = ['index.html', 'manifest.webmanifest'];
